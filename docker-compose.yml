@@ -148,4 +148,4 @@ volumes:
   
 configs:
   mb_config:
-    file: C:\Users\thomas.mcculloch\Desktop\kafka-docker\metricbeat.yml
+    file: ~/kafka/metricbeat/metricbeat.yml
