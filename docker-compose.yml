@@ -1,0 +1,151 @@
+version: '3.3'
+services:
+
+  zoo1:
+    image: zookeeper
+    hostname: zoo1
+    ports:
+      - 2181:2181
+    environment:
+      ZOO_MY_ID: 1
+      ZOO_SERVERS: server.1=0.0.0.0:2888:3888 server.2=zoo2:2888:3888 server.3=zoo3:2888:3888
+    deploy:
+      placement:
+        constraints:
+          - node.labels.zookeeper == 1
+
+  zoo2:
+    image: zookeeper
+    hostname: zoo2
+    ports:
+      - 2182:2181
+    environment:
+      ZOO_MY_ID: 2
+      ZOO_SERVERS: server.1=zoo1:2888:3888 server.2=0.0.0.0:2888:3888 server.3=zoo3:2888:3888
+    deploy:
+      placement:
+        constraints:
+          - node.labels.zookeeper == 2
+        
+  zoo3:
+    image: zookeeper
+    hostname: zoo3
+    ports:
+      - 2183:2181
+    environment:
+      ZOO_MY_ID: 3
+      ZOO_SERVERS: server.1=zoo1:2888:3888 server.2=zoo2:2888:3888 server.3=0.0.0.0:2888:3888
+    deploy:
+      placement:
+        constraints:
+          - node.labels.zookeeper == 3
+      
+  kafka:
+    image: wurstmeister/kafka
+    deploy:
+      mode: global
+    ports:
+      - target: 9094
+        published: 9094
+        protocol: tcp
+        mode: host
+    environment:
+      HOSTNAME_COMMAND: "docker info | grep 'Node Address:' | cut -d':' -f 2 | cut -d' ' -f 2"
+      KAFKA_ZOOKEEPER_CONNECT: zoo1:2181,zoo2:2182,zoo3:2183
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INSIDE:PLAINTEXT,OUTSIDE:PLAINTEXT
+      KAFKA_ADVERTISED_LISTENERS: INSIDE://:9092,OUTSIDE://_{HOSTNAME_COMMAND}:9094
+      KAFKA_LISTENERS: INSIDE://:9092,OUTSIDE://:9094
+      KAFKA_INTER_BROKER_LISTENER_NAME: INSIDE
+    depends_on:
+        - zoo1
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+
+  visualizer:
+    image: dockersamples/visualizer:stable
+    ports:
+      - "8080:8080"
+    volumes:
+      - "/var/run/docker.sock:/var/run/docker.sock"
+    deploy:
+      placement:
+        constraints: [node.role == manager]
+
+
+  kibana:
+    image: docker.elastic.co/kibana/kibana:6.6.0
+    ports:
+      -  "5601:5601"
+    hostname: "{{.Node.Hostname}}-kibana"
+    environment:
+      - ELASTICSEARCH_URL=http://elasticsearch:9200
+      - KIBANA_HOST=http://kibana:5601
+      - ELASTICSEARCH_USERNAME=${ELASTICSEARCH_USERNAME:-elastic}
+      - ELASTICSEARCH_PASSWORD=${ELASTICSEARCH_PASSWORD:-changeme}
+      - SERVER_NAME="{{.Node.Hostname}}-kibana"
+    volumes:
+      - kibana:/usr/share/kibana/data
+    deploy:
+      labels:
+        - com.df.notify=true
+        - com.df.distribute=true
+        - com.df.servicePath=/
+        - com.df.port=5601
+        - com.df.srcPort=80
+    depends_on:
+      - elasticsearch
+    
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:6.6.0
+    ports:
+      - "9200:9200"
+    hostname: "{{.Node.Hostname}}-elasticsearch"
+    environment:
+      - discovery.zen.ping.unicast.hosts=elasticsearch
+      - discovery.zen.minimum_master_nodes=1
+      - ELASTIC_PASSWORD=${ELASTICSEARCH_PASSWORD:-changeme}
+      - xpack.security.enabled=true
+      - xpack.monitoring.collection.enabled=true
+      - xpack.license.self_generated.type=trial
+      - cluster.name=DevOps
+      - node.name={{.Node.Hostname}}-elasticsearch
+      - network.host=0.0.0.0
+    volumes:
+      - elasticsearch:/usr/share/elasticsearch/data
+    deploy:
+      labels:
+        - com.df.notify=true
+        - com.df.distribute=true
+        - com.df.servicePath=/
+        - com.df.port=9200
+        - com.df.srcPort=9200
+
+  metricbeat:
+    image: docker.elastic.co/beats/metricbeat:6.6.0
+    hostname: "{{.Node.Hostname}}-metricbeat"
+    user: root
+    configs:
+      - source: mb_config
+        target: /usr/share/metricbeat/metricbeat.yml
+    volumes:
+      - /proc:/hostfs/proc:ro
+      - /sys/fs/cgroup:/hostfs/sys/fs/cgroup:ro
+      - /:/hostfs:ro
+      - /var/run/docker.sock:/var/run/docker.sock
+      - metricbeat:/usr/share/metricbeat/data
+    environment:
+      - ELASTICSEARCH_HOST=elasticsearch:9200
+      - KIBANA_HOST=kibana:5601
+      - ELASTICSEARCH_USERNAME=${ELASTICSEARCH_USERNAME:-elastic}
+      - ELASTICSEARCH_PASSWORD=${ELASTICSEARCH_PASSWORD:-changeme}
+    command: ["--strict.perms=false", "-system.hostfs=/hostfs"]
+    
+
+volumes:
+  elasticsearch:
+  kibana:
+  metricbeat:
+  
+configs:
+  mb_config:
+    file: C:\Users\thomas.mcculloch\Desktop\kafka-docker\metricbeat.yml
