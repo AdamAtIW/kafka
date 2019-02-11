@@ -124,6 +124,8 @@ services:
     image: docker.elastic.co/beats/metricbeat:6.6.0
     hostname: "{{.Node.Hostname}}-metricbeat"
     user: root
+    deploy:
+       mode: global
     configs:
       - source: mb_config
         target: /usr/share/metricbeat/metricbeat.yml
